@@ -1,21 +1,16 @@
 use starknet::ContractAddress;
 
 #[starknet::interface]
-trait IData<T> {
-    fn get_data(self: @T) -> felt252;
-    fn set_data(ref self: T, new_value: felt252);
-}
-
-#[starknet::interface]
 trait IOwnable<T> {
     fn transfer_ownership(ref self: T, new_owner: ContractAddress);
     fn owner(self: @T) -> ContractAddress;
 }
 
 #[starknet::component]
-mod ownable_component {
+pub mod OwnableComponent {
     use super::{ContractAddress, IOwnable};
     use starknet::get_caller_address;
+    use core::num::traits::Zero;
 
     #[storage]
     struct Storage {
@@ -24,12 +19,13 @@ mod ownable_component {
 
     #[event]
     #[derive(Drop, starknet::Event)]
-    enum Event {
+    pub enum Event {
         OwnershipTransferred: OwnershipTransferred
     }
 
     #[derive(Drop, starknet::Event)]
     struct OwnershipTransferred {
+        #[key]
         previous_owner: ContractAddress,
         new_owner: ContractAddress,
     }
@@ -50,13 +46,13 @@ mod ownable_component {
     }
 
     #[generate_trait]
-    impl InternalImpl<
+    pub impl InternalImpl<
         TContractState, +HasComponent<TContractState>
     > of InternalTrait<TContractState> {
         fn only_owner(self: @ComponentState<TContractState>) {
             let owner: ContractAddress = self.owner.read();
             let caller: ContractAddress = get_caller_address();
-            assert(!caller.is_zero(), 'ZERO_ADDRESS_CALLER');
+            assert(caller.is_non_zero(), 'ZERO_ADDRESS_CALLER');
             assert(caller == owner, 'NOT_OWNER');
         }
 
@@ -72,30 +68,35 @@ mod ownable_component {
         }
     }
 }
+#[starknet::interface]
+trait IData<T> {
+    fn get_data(self: @T) -> u64;
+    fn set_data(ref self: T, new_value: u64);
+}
 
 #[starknet::contract]
-mod ownable_contract {
-    use ownable_project::ownable_component;
-    use super::{ContractAddress, IData};
+pub mod OwnableContract {
+    use super::{IData,ContractAddress};
+    use contracts::OwnableComponent;
 
-    component!(path: ownable_component, storage: ownable, event: OwnableEvent);
+    component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
 
     #[abi(embed_v0)]
-    impl OwnableImpl = ownable_component::Ownable<ContractState>;
+    impl OwnableImpl = OwnableComponent::Ownable<ContractState>;
 
-    impl OwnableInternalImpl = ownable_component::InternalImpl<ContractState>;
+    impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
 
     #[storage]
     struct Storage {
-        data: felt252,
+        data: u64,
         #[substorage(v0)]
-        ownable: ownable_component::Storage
+        ownable: OwnableComponent::Storage
     }
 
     #[event]
     #[derive(Drop, starknet::Event)]
     enum Event {
-        OwnableEvent: ownable_component::Event
+        OwnableEvent: OwnableComponent::Event
     }
 
     #[constructor]
@@ -103,12 +104,12 @@ mod ownable_contract {
         self.ownable.owner.write(initial_owner);
         self.data.write(1);
     }
-    #[external(v0)]
+    #[abi(embed_v0)]
     impl OwnableDataImpl of IData<ContractState> {
-        fn get_data(self: @ContractState) -> felt252 {
+        fn get_data(self: @ContractState) -> u64 {
             self.data.read()
         }
-        fn set_data(ref self: ContractState, new_value: felt252) {
+        fn set_data(ref self: ContractState, new_value: u64) {
             self.ownable.only_owner();
             self.data.write(new_value);
         }
